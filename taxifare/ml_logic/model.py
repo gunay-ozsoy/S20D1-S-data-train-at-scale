@@ -21,7 +21,13 @@ def initialize_model(input_shape: tuple) -> Model:
     """
     Initialize the Neural Network with random weights
     """
-    # YOUR CODE HERE
+    model = Sequential()
+
+    model.add(layers.Input(shape=input_shape))
+    model.add(layers.Dense(30, activation="relu"))
+    model.add(layers.Dense(20, activation="relu"))
+    model.add(layers.Dense(10, activation="relu"))
+    model.add(layers.Dense(1, activation="linear"))
 
     print("✅ Model initialized")
 
@@ -32,7 +38,8 @@ def compile_model(model: Model, learning_rate=0.0005) -> Model:
     """
     Compile the Neural Network
     """
-    # YOUR CODE HERE
+    optimizer = optimizers.Adam(learning_rate=learning_rate)
+    model.compile(loss="mse", optimizer=optimizer, metrics=["mae"])
 
     print("✅ Model compiled")
 
@@ -50,7 +57,26 @@ def train_model(
     """
     Fit the model and return a tuple (fitted_model, history)
     """
-    # YOUR CODE HERE
+    es = EarlyStopping(
+        monitor="val_mae",
+        patience=patience,
+        restore_best_weights=True,
+        verbose=0
+    )
+
+    fit_kwargs = dict(
+        batch_size=batch_size,
+        epochs=100,
+        callbacks=[es],
+        verbose=1
+    )
+
+    if validation_data is not None:
+        fit_kwargs["validation_data"] = validation_data
+    else:
+        fit_kwargs["validation_split"] = validation_split
+
+    history = model.fit(X, y, **fit_kwargs)
 
     print(f"✅ Model trained on {len(X)} rows with min val MAE: {round(np.min(history.history['val_mae']), 2)}")
 

@@ -2,9 +2,9 @@ import os
 import numpy as np
 
 ##################  VARIABLES  ##################
-DATA_SIZE = "1k" # ["1k", "200k", "all"]
+DATA_SIZE = "200k" # ["1k", "200k", "all"]
 CHUNK_SIZE = 200
-GCP_PROJECT = "<your project id>" # TO COMPLETE
+GCP_PROJECT = "workintech-genai-485723" # TO COMPLETE
 GCP_PROJECT_WAGON = "wagon-public-datasets"
 BQ_DATASET = "taxifare"
 BQ_REGION = "EU"
@@ -14,6 +14,8 @@ LOCAL_DATA_PATH = os.path.join(os.path.expanduser('~'), ".lewagon", "mlops", "da
 LOCAL_REGISTRY_PATH =  os.path.join(os.path.expanduser('~'), ".lewagon", "mlops", "training_outputs")
 
 COLUMN_NAMES_RAW = ['fare_amount','pickup_datetime', 'pickup_longitude', 'pickup_latitude', 'dropoff_longitude', 'dropoff_latitude', 'passenger_count']
+
+BOUNDING_BOXES = (-74.3, -73.7, 40.5, 40.9) # lon_min, lon_max, lat_min, lat_max
 
 DTYPES_RAW = {
     "fare_amount": "float32",

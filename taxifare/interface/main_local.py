@@ -40,29 +40,48 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
 
     if data_query_cached_exists:
         print("Loading data from local CSV...")
-
-        # YOUR CODE HERE
+        
+        data = pd.read_csv(data_query_cache_path, parse_dates=['pickup_datetime'])
 
     else:
         print("Loading data from Querying Big Query server...")
 
-        # YOUR CODE HERE
+        # Make sure local folder exists (raw/)
+        data_query_cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+        client = bigquery.Client(project=GCP_PROJECT)
+        query_job = client.query(query)
+        result = query_job.result()
+        data = result.to_dataframe()
 
         # Save it locally to accelerate the next queries!
         data.to_csv(data_query_cache_path, header=True, index=False)
 
     # Clean data using data.py
-    # YOUR CODE HERE
+    data = clean_data(data)
 
     # Create (X_train, y_train, X_val, y_val) without data leaks
     # No need for test sets, we'll report val metrics only
     split_ratio = 0.02 # About one month of validation data
 
-    # YOUR CODE HERE
+    # time-ordered split (no leakage)
+    data = data.sort_values("pickup_datetime").reset_index(drop=True)
+
+    split_index = int(len(data) * (1 - split_ratio))
+
+    data_train = data.iloc[:split_index]
+    data_val = data.iloc[split_index:]
+
+    X_train = data_train.drop(columns=["fare_amount"])
+    y_train = data_train["fare_amount"].to_numpy()
+
+    X_val = data_val.drop(columns=["fare_amount"])
+    y_val = data_val["fare_amount"].to_numpy()
 
     # Create (X_train_processed, X_val_processed) using `preprocessor.py`
     # Luckily, our preprocessor is stateless: we can `fit_transform` both X_train and X_val without data leakage!
-    # YOUR CODE HERE
+    X_train_processed = preprocess_features(X_train)
+    X_val_processed = preprocess_features(X_val)
 
     # Train a model on the training set, using `model.py`
     model = None
@@ -70,7 +89,17 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
     batch_size = 256
     patience = 2
 
-    # YOUR CODE HERE
+    model = initialize_model(input_shape=(X_train_processed.shape[1],))
+    model = compile_model(model, learning_rate=learning_rate)
+
+    model, history = train_model(
+        model=model,
+        X=X_train_processed,
+        y=y_train,
+        batch_size=batch_size,
+        patience=patience,
+        validation_data=(X_val_processed, y_val)
+    )
 
     # Compute the validation metric (min val_mae) of the holdout set
     val_mae = np.min(history.history['val_mae'])
