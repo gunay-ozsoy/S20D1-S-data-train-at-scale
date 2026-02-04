@@ -184,6 +184,68 @@ def preprocess_and_train(min_date: str = "2009-01-01", max_date: str = "2015-01-
     print("✅ preprocess_and_train() done")
 
 
+@simple_time_and_memory_tracker
+def train(min_date: str = "2009-01-01", max_date: str = "2015-01-01") -> None:
+    """
+    Incremental training: read processed CSV by chunks and keep training the SAME model.
+    Processed CSV format:
+      - header=None
+      - 66 columns = 65 features + 1 target (fare_amount)
+      - dtype float32
+    """
+    # Read patched values safely at runtime (tests patch taxifare.params.DATA_SIZE/CHUNK_SIZE)
+    import taxifare.params as p
+
+    print(Fore.MAGENTA + "\n ⭐️ Use case: train" + Style.RESET_ALL)
+
+    min_date = parse(min_date).strftime("%Y-%m-%d")
+    max_date = parse(max_date).strftime("%Y-%m-%d")
+
+    processed_path = Path(p.LOCAL_DATA_PATH).joinpath(
+        "processed", f"processed_{min_date}_{max_date}_{p.DATA_SIZE}.csv"
+    )
+
+    if not processed_path.is_file():
+        raise FileNotFoundError(f"Processed dataset not found: {processed_path}")
+
+    print(f"Loading processed chunks from: {processed_path}")
+
+    n_features = 65
+    learning_rate = 0.0005
+    batch_size = 256
+
+    # Initialize ONCE
+    model = initialize_model(input_shape=(n_features,))
+    model = compile_model(model, learning_rate=learning_rate)
+
+    total_seen = 0
+
+    reader = pd.read_csv(
+        processed_path,
+        header=None,
+        dtype=p.DTYPES_PROCESSED,
+        chunksize=p.CHUNK_SIZE
+    )
+
+    for chunk_id, chunk in enumerate(reader):
+        X_chunk = chunk.iloc[:, :n_features].to_numpy()
+        y_chunk = chunk.iloc[:, n_features].to_numpy()
+
+        model.fit(
+            X_chunk,
+            y_chunk,
+            batch_size=batch_size,
+            epochs=1,
+            verbose=0
+        )
+
+        total_seen += len(chunk)
+        print(f"✅ trained on chunk #{chunk_id} ({len(chunk)} rows) | total seen: {total_seen}")
+
+    save_model(model)
+    print("✅ train() done")
+
+
 def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     print(Fore.MAGENTA + "\n ⭐️ Use case: pred" + Style.RESET_ALL)
 
@@ -211,6 +273,7 @@ if __name__ == "__main__":
     try:
         # preprocess()
         preprocess_and_train()
+        # train()
         pred()
     except Exception:
         import sys

@@ -9,37 +9,9 @@ tests/train_at_scale/test_clean.py::test_clean_data PASSED               [ 12%]
 tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_preprocess_and_train PASSED [ 25%]
 tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_pred PASSED [ 37%]
 tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_preprocess PASSED [ 50%]
-tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_train FAILED [ 62%]
+tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_train PASSED [ 62%]
 tests/train_at_scale/test_model.py::test_model_can_fit PASSED            [ 75%]
 tests/train_at_scale/test_notebook.py::TestNotebook::test_y_pred PASSED  [ 87%]
 tests/train_at_scale/test_processor_pipeline.py::test_preprocess_features PASSED [100%]
 
-=================================== FAILURES ===================================
-________________________ TestMainLocal.test_route_train ________________________
-
-self = <tests.train_at_scale.test_main_local.TestMainLocal object at 0x7fc863f27760>
-
-    def test_route_train(self):
-    
-        # SETUP
-        data_processed_path = Path(LOCAL_DATA_PATH).joinpath("processed",f"processed_{MIN_DATE}_{MAX_DATE}_{DATA_SIZE}.csv")
-        data_processed_exists = data_processed_path.is_file()
-        if data_processed_exists:
-            shutil.copyfile(data_processed_path, f'{data_processed_path}_backup')
-            data_processed_path.unlink()
-    
-        data_processed_fixture_path = "https://storage.googleapis.com/datascience-mlops/taxi-fare-ny/solutions/data_processed_fixture_2009-01-01_2015-01-01_1k.csv"
-        os.system(f"curl {data_processed_fixture_path} > {data_processed_path}")
-    
-        # ACT
->       from taxifare.interface.main_local import train
-E       ImportError: cannot import name 'train' from 'taxifare.interface.main_local' (/home/gunay/code/07-ML-Ops/01-Train-at-scale/S20D1-S-data-train-at-scale/taxifare/interface/main_local.py)
-
-tests/train_at_scale/test_main_local.py:126: ImportError
------------------------------ Captured stderr call -----------------------------
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  153k  100  153k    0     0   301k      0 --:--:-- --:--:-- --:--:--  301k
-=========================== short test summary info ============================
-FAILED tests/train_at_scale/test_main_local.py::TestMainLocal::test_route_train
-================== 1 failed, 7 passed, 16 warnings in 20.95s ===================
+======================= 8 passed, 20 warnings in 27.14s ========================
