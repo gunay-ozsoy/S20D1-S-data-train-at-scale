@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 ##################  VARIABLES  ##################
-DATA_SIZE = "200k" # ["1k", "200k", "all"]
+DATA_SIZE = "all" # ["1k", "200k", "all"]
 CHUNK_SIZE = 200
 GCP_PROJECT = "workintech-genai-485723" # TO COMPLETE
 GCP_PROJECT_WAGON = "wagon-public-datasets"

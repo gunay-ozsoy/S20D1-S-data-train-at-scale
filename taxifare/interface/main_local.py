@@ -11,7 +11,9 @@ from taxifare.ml_logic.data import clean_data
 from taxifare.ml_logic.preprocessor import preprocess_features
 from taxifare.ml_logic.registry import save_model, save_results, load_model
 from taxifare.ml_logic.model import compile_model, initialize_model, train_model
+from taxifare.utils import simple_time_and_memory_tracker
 
+@simple_time_and_memory_tracker
 def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01') -> None:
     """
     - Query the raw dataset from Le Wagon's BigQuery dataset

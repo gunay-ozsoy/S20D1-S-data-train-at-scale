@@ -15,8 +15,9 @@ from keras.callbacks import EarlyStopping
 end = time.perf_counter()
 print(f"\n✅ TensorFlow loaded ({round(end - start, 2)}s)")
 
+from taxifare.utils import simple_time_and_memory_tracker
 
-
+@simple_time_and_memory_tracker
 def initialize_model(input_shape: tuple) -> Model:
     """
     Initialize the Neural Network with random weights
