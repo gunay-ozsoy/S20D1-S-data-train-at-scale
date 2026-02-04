@@ -13,8 +13,92 @@ from taxifare.ml_logic.registry import save_model, save_results, load_model
 from taxifare.ml_logic.model import compile_model, initialize_model, train_model
 from taxifare.utils import simple_time_and_memory_tracker
 
+
+def _raw_cache_path(min_date: str, max_date: str) -> Path:
+    return Path(LOCAL_DATA_PATH).joinpath(
+        "raw", f"query_{min_date}_{max_date}_{DATA_SIZE}.csv"
+    )
+
+
+def _processed_cache_path(min_date: str, max_date: str) -> Path:
+    # ✅ tests expect exactly this filename
+    return Path(LOCAL_DATA_PATH).joinpath(
+        "processed", f"processed_{min_date}_{max_date}_{DATA_SIZE}.csv"
+    )
+
+
 @simple_time_and_memory_tracker
-def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01') -> None:
+def preprocess(min_date: str = "2009-01-01", max_date: str = "2015-01-01") -> None:
+    """
+    - Ensure raw query cache exists locally (raw/query_...csv)
+    - Stream it by chunks
+    - Clean + preprocess each chunk
+    - Append to a single processed CSV without headers
+    - ✅ Include target (fare_amount) as last column -> 66 columns total
+    """
+    print(Fore.MAGENTA + "\n ⭐️ Use case: preprocess" + Style.RESET_ALL)
+
+    min_date = parse(min_date).strftime("%Y-%m-%d")
+    max_date = parse(max_date).strftime("%Y-%m-%d")
+
+    query = f"""
+        SELECT {",".join(COLUMN_NAMES_RAW)}
+        FROM `{GCP_PROJECT_WAGON}`.{BQ_DATASET}.raw_{DATA_SIZE}
+        WHERE pickup_datetime BETWEEN '{min_date}' AND '{max_date}'
+        ORDER BY pickup_datetime
+    """
+
+    raw_path = _raw_cache_path(min_date, max_date)
+    processed_path = _processed_cache_path(min_date, max_date)
+
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    processed_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Writing processed chunks to: {processed_path}")
+
+    # start fresh each run (avoid appending to old file)
+    if processed_path.is_file():
+        processed_path.unlink()
+
+    # Create raw cache if missing (tests expect it to exist after preprocess())
+    if not raw_path.is_file():
+        print("Creating raw cache CSV...")
+        client = bigquery.Client(project=GCP_PROJECT)
+        data = client.query(query).result().to_dataframe()
+        data.to_csv(raw_path, index=False)
+
+    total_written = 0
+
+    for i, chunk in enumerate(
+        pd.read_csv(raw_path, parse_dates=["pickup_datetime"], chunksize=CHUNK_SIZE)
+    ):
+        chunk = clean_data(chunk)
+
+        # X + y
+        y_chunk = chunk["fare_amount"].to_numpy().reshape(-1, 1)
+        X_chunk = chunk.drop(columns=["fare_amount"])
+
+        X_processed = preprocess_features(X_chunk)  # (n, 65)
+
+        # ✅ concatenate target as last column -> (n, 66)
+        data_processed = np.concatenate([X_processed, y_chunk], axis=1)
+
+        # IMPORTANT: tests read with header=None -> write with header=False always
+        pd.DataFrame(data_processed).to_csv(
+            processed_path,
+            mode="a",
+            header=False,
+            index=False
+        )
+
+        total_written += data_processed.shape[0]
+        print(f"✅ chunk #{i} saved ({data_processed.shape[0]} rows) | total written: {total_written}")
+
+    print(f"✅ preprocess() done -> {processed_path} ({total_written} rows)")
+
+
+@simple_time_and_memory_tracker
+def preprocess_and_train(min_date: str = "2009-01-01", max_date: str = "2015-01-01") -> None:
     """
     - Query the raw dataset from Le Wagon's BigQuery dataset
     - Cache query result as a local CSV if it doesn't exist locally
@@ -23,32 +107,26 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
     - Save the model
     - Compute & save a validation performance metric
     """
-
     print(Fore.MAGENTA + "\n ⭐️ Use case: preprocess_and_train" + Style.RESET_ALL)
 
-    min_date = parse(min_date).strftime('%Y-%m-%d') # e.g '2009-01-01'
-    max_date = parse(max_date).strftime('%Y-%m-%d') # e.g '2009-01-01'
+    min_date = parse(min_date).strftime("%Y-%m-%d")
+    max_date = parse(max_date).strftime("%Y-%m-%d")
 
     query = f"""
         SELECT {",".join(COLUMN_NAMES_RAW)}
         FROM `{GCP_PROJECT_WAGON}`.{BQ_DATASET}.raw_{DATA_SIZE}
         WHERE pickup_datetime BETWEEN '{min_date}' AND '{max_date}'
         ORDER BY pickup_datetime
-        """
+    """
 
-    # Retrieve `query` data from BigQuery or from `data_query_cache_path` if the file already exists!
-    data_query_cache_path = Path(LOCAL_DATA_PATH).joinpath("raw", f"query_{min_date}_{max_date}_{DATA_SIZE}.csv")
+    data_query_cache_path = _raw_cache_path(min_date, max_date)
     data_query_cached_exists = data_query_cache_path.is_file()
 
     if data_query_cached_exists:
         print("Loading data from local CSV...")
-        
-        data = pd.read_csv(data_query_cache_path, parse_dates=['pickup_datetime'])
-
+        data = pd.read_csv(data_query_cache_path, parse_dates=["pickup_datetime"])
     else:
         print("Loading data from Querying Big Query server...")
-
-        # Make sure local folder exists (raw/)
         data_query_cache_path.parent.mkdir(parents=True, exist_ok=True)
 
         client = bigquery.Client(project=GCP_PROJECT)
@@ -56,19 +134,12 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
         result = query_job.result()
         data = result.to_dataframe()
 
-        # Save it locally to accelerate the next queries!
         data.to_csv(data_query_cache_path, header=True, index=False)
 
-    # Clean data using data.py
     data = clean_data(data)
 
-    # Create (X_train, y_train, X_val, y_val) without data leaks
-    # No need for test sets, we'll report val metrics only
-    split_ratio = 0.02 # About one month of validation data
-
-    # time-ordered split (no leakage)
+    split_ratio = 0.02
     data = data.sort_values("pickup_datetime").reset_index(drop=True)
-
     split_index = int(len(data) * (1 - split_ratio))
 
     data_train = data.iloc[:split_index]
@@ -80,13 +151,9 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
     X_val = data_val.drop(columns=["fare_amount"])
     y_val = data_val["fare_amount"].to_numpy()
 
-    # Create (X_train_processed, X_val_processed) using `preprocessor.py`
-    # Luckily, our preprocessor is stateless: we can `fit_transform` both X_train and X_val without data leakage!
     X_train_processed = preprocess_features(X_train)
     X_val_processed = preprocess_features(X_val)
 
-    # Train a model on the training set, using `model.py`
-    model = None
     learning_rate = 0.0005
     batch_size = 256
     patience = 2
@@ -100,13 +167,11 @@ def preprocess_and_train(min_date:str = '2009-01-01', max_date:str = '2015-01-01
         y=y_train,
         batch_size=batch_size,
         patience=patience,
-        validation_data=(X_val_processed, y_val)
+        validation_data=(X_val_processed, y_val),
     )
 
-    # Compute the validation metric (min val_mae) of the holdout set
-    val_mae = np.min(history.history['val_mae'])
+    val_mae = float(np.min(history.history["val_mae"]))
 
-    # Save trained model
     params = dict(
         learning_rate=learning_rate,
         batch_size=batch_size,
@@ -123,35 +188,35 @@ def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     print(Fore.MAGENTA + "\n ⭐️ Use case: pred" + Style.RESET_ALL)
 
     if X_pred is None:
-        X_pred = pd.DataFrame(dict(
-            pickup_datetime=[pd.Timestamp("2013-07-06 17:18:00", tz='UTC')],
-            pickup_longitude=[-73.950655],
-            pickup_latitude=[40.783282],
-            dropoff_longitude=[-73.984365],
-            dropoff_latitude=[40.769802],
-            passenger_count=[1],
-        ))
+        X_pred = pd.DataFrame(
+            dict(
+                pickup_datetime=[pd.Timestamp("2013-07-06 17:18:00", tz="UTC")],
+                pickup_longitude=[-73.950655],
+                pickup_latitude=[40.783282],
+                dropoff_longitude=[-73.984365],
+                dropoff_latitude=[40.769802],
+                passenger_count=[1],
+            )
+        )
 
     model = load_model()
     X_processed = preprocess_features(X_pred)
     y_pred = model.predict(X_processed)
 
-    print(f"✅ pred() done")
-
+    print("✅ pred() done")
     return y_pred
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     try:
-        preprocess_and_train()
         # preprocess()
-        # train()
+        preprocess_and_train()
         pred()
-    except:
+    except Exception:
         import sys
         import traceback
-
         import ipdb
+
         extype, value, tb = sys.exc_info()
         traceback.print_exc()
         ipdb.post_mortem(tb)
